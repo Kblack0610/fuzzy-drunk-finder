@@ -73,6 +73,18 @@ Create a more responsive version of `fzf_dev.sh` that:
   - [X] Show entry counts, settings, and performance data in debug mode
   - [X] Fix history filtering to work with all flag combinations
   - [X] Fix temporary file handling to ensure consistent behavior
+[X] Fix history search with all flag combinations
+  - [X] Completely redesign history handling with direct [HISTORY] tags
+  - [X] Remove temporary file approach which was causing search issues
+  - [X] Combine entries with proper newline handling
+  - [X] Ensure history entries appear in search with all flag combinations
+  - [X] More verbose debug information to help troubleshoot
+[X] Add test capabilities for search functionality
+  - [X] Add --search flag for non-interactive testing of search results
+  - [X] Allow specifying an optional search term to test filtering
+  - [X] Show separate sections for history and directory matches
+  - [X] Display clear counts of matched entries
+  - [X] Provide detailed summary to help diagnose issues
 [ ] Additional performance optimizations (deferred)
 [ ] Implement additional improvements
 
@@ -145,6 +157,19 @@ Create a more responsive version of `fzf_dev.sh` that:
 - Small changes in command arguments (--nth vs --with-nth) can have big impacts on functionality
 - Combining a clean interface with an optional debug mode gives users the best of both worlds
 - Different types of users have different needs - some want simplicity while others want visibility into internal operations
+- Sometimes complex approaches (temporary files, prefixes) cause more problems than they solve
+- Direct text manipulation with tools like sed can be more reliable than complex parsing
+- Always test your changes with all possible flag combinations
+- Temporary files can introduce issues with newlines and special characters
+- When things get complex, simplify your approach and start over
+- Make debugging easy by showing real examples of data in debug mode
+- Keep detailed information available in debug mode but hidden in normal operation
+- Sometimes you need specialized testing tools to diagnose complex issues
+- Non-interactive testing modes can help identify problems that are hard to see in interactive use
+- When diagnosing search issues, it helps to see exactly what would be searched and matched
+- Separate testing tools are invaluable for shell scripts where normal debugging is challenging
+- For search issues, creating a dedicated test mode is better than trying to debug via the UI
+- Simulate user actions in test mode to verify expected behavior works correctly
 
 ## Potential Additional Improvements
 1. Add fuzzy search capabilities for deeper directory structures

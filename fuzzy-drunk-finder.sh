@@ -115,6 +115,8 @@ fdf() {
     local use_history=true
     local start_time=$(date +%s.%N)
     local debug_mode=false
+    local search_term=""
+    local test_mode=false
     
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -135,6 +137,16 @@ fdf() {
                 debug_mode=true
                 shift
                 ;;
+            --search)
+                test_mode=true
+                if [[ -n "$2" && "$2" != -* ]]; then
+                    search_term="$2"
+                    shift 2
+                else
+                    search_term=""
+                    shift
+                fi
+                ;;
             --depth)
                 if [[ "$2" =~ ^[0-9]+$ ]]; then
                     depth="$2"
@@ -150,7 +162,7 @@ fdf() {
                 ;;
             -*)
                 echo "Unknown option: $1"
-                echo "Usage: fdf [--hidden] [--depth N] [--unlimited] [--no-history] [--debug] [directory]"
+                echo "Usage: fdf [--hidden] [--depth N] [--unlimited] [--no-history] [--debug] [--search [TERM]] [directory]"
                 return 1
                 ;;
             *)
@@ -218,89 +230,152 @@ fdf() {
         echo "Debug: Boot time: ${boot_time}s"
     fi
     
-    # Create a temporary file for our combined listing
-    local tmpfile=$(mktemp)
+    # Create a temporary file for FZF input
+    local tmp_history=$(mktemp)
+    local tmp_dirs=$(mktemp)
     
-    # Add history entries with a prefix tag in first column
+    # Debug info
+    if [ "$debug_mode" = true ]; then
+        echo "Debug: Using temporary history file: $tmp_history"
+        echo "Debug: Using temporary dirs file: $tmp_dirs"
+    fi
+    
+    # Add history entries to a separate temp file
+    local history_count=0
     if [ -n "$history_entries" ]; then
-        while IFS= read -r line; do
-            echo "H:$line" >> "$tmpfile"
+        while IFS= read -r hentry; do
+            if [ -n "$hentry" ]; then
+                # Make history entries stand out with a distinctive prefix
+                echo "HISTORY: $hentry" >> "$tmp_history"
+                history_count=$((history_count + 1))
+            fi
         done <<< "$history_entries"
     fi
     
-    # Add regular directories with a different prefix
-    while IFS= read -r line; do
-        echo "D:$line" >> "$tmpfile"
-    done <<< "$dirs" >> "$tmpfile"
+    # Add directories to a separate temp file
+    echo "$dirs" > "$tmp_dirs"
     
-    # Use --with-nth for display and include [HISTORY] tag in preview
-    local preview_cmd
+    # In debug mode, show even more details
     if [ "$debug_mode" = true ]; then
-        # Detailed preview in debug mode
-        preview_cmd='if [[ {1} == "H" ]]; then 
-            echo -e "\033[34m[HISTORY]\033[0m Type: History Entry"; 
-            echo "From directory: '"$start_dir"'"; 
-        else 
-            echo "Type: Regular Directory"; 
-        fi'
-    else
-        # Normal preview just shows [HISTORY] tag
-        preview_cmd='if [[ {1} == "H" ]]; then echo -e "\033[34m[HISTORY]\033[0m"; else echo ""; fi'
+        echo "Debug: History entries added: $history_count"
+        echo "Debug: Total directories: $(wc -l < "$tmp_dirs")"
+        
+        if [ -n "$history_entries" ]; then
+            echo "Debug: First few history entries:"
+            echo "$history_entries" | head -3 | sed 's/^/  /'
+        fi
+        
+        echo "Debug: First few directory entries:"
+        echo "$dirs" | head -3 | sed 's/^/  /'
+        
+        echo "Debug: First few lines of history file:"
+        head -3 "$tmp_history" | sed 's/^/  /'
     fi
     
-    # Define FZF options - keeping the prefix for sorting but showing the path
+    # Test mode - simulate a search without using FZF
+    if [ "$test_mode" = true ]; then
+        echo "=== TEST MODE: Showing entries that would be searched ==="
+        echo "Search term: '${search_term}'"
+        echo "=== History Entries ==="
+        
+        if [ -n "$history_entries" ]; then
+            if [ -n "$search_term" ]; then
+                # Search within history entries
+                matched_history=$(echo "$history_entries" | grep -i "$search_term" || echo "")
+                if [ -n "$matched_history" ]; then
+                    echo "$matched_history" | sed 's/^/[HISTORY] /'
+                    history_count=$(echo "$matched_history" | wc -l)
+                else
+                    echo "No history entries match the search term."
+                    history_count=0
+                fi
+            else
+                # Show all history entries
+                echo "$history_entries" | sed 's/^/[HISTORY] /'
+                history_count=$(echo "$history_entries" | wc -l)
+            fi
+        else
+            echo "No history entries found for this directory."
+            history_count=0
+        fi
+        
+        echo "=== Regular Directories ==="
+        local dirs_count=0
+        
+        if [ -n "$search_term" ]; then
+            # Search within directories
+            matched_dirs=$(echo "$dirs" | grep -i "$search_term" || echo "")
+            if [ -n "$matched_dirs" ]; then
+                echo "$matched_dirs" | head -20
+                dirs_count=$(echo "$matched_dirs" | wc -l)
+                if [ "$dirs_count" -gt 20 ]; then
+                    echo "... ($(($dirs_count - 20)) more matches)"
+                fi
+            else
+                echo "No directory entries match the search term."
+                dirs_count=0
+            fi
+        else
+            # Show sample of directories
+            echo "$dirs" | head -20
+            dirs_count=$(echo "$dirs" | wc -l)
+            if [ "$dirs_count" -gt 20 ]; then
+                echo "... ($(($dirs_count - 20)) more entries)"
+            fi
+        fi
+        
+        echo "=== Summary ==="
+        echo "Total history matches: $history_count"
+        echo "Total directory matches: $dirs_count"
+        echo "Total matches: $(($history_count + $dirs_count))"
+        echo "Test complete. Exiting without selection."
+        
+        # Cleanup
+        rm -f "$tmp_history" "$tmp_dirs"
+        return 0
+    fi
+    
+    # Use FZF for selection with improved options - critically important!
     local fzf_opts=(
         --height 40%
         --reverse
         --header="$header_text"
         --prompt="Fuzzy Drunk Finder > "
-        --delimiter :
-        --with-nth 2..
-        --preview "$preview_cmd"
-        --preview-window=up:1:noborder
+        --bind="ctrl-/:toggle-preview"
+        --preview="echo {} | grep -q '^HISTORY:' && echo 'History entry from previous navigation' || ls -la ${start_dir}/{} 2>/dev/null || ls -la {} 2>/dev/null || echo 'No preview available'"
     )
     
-    # In debug mode, add visible type indicators to the displayed output
     if [ "$debug_mode" = true ]; then
-        cat "$tmpfile" | awk -F: '{
-            if($1 == "H") {
-                print $1 ":" $2 " [HISTORY]"
-            } else {
-                print $0
-            }
-        }' > "${tmpfile}.display"
-        mv "${tmpfile}.display" "$tmpfile"
+        echo "Debug: FZF options: ${fzf_opts[*]}"
     fi
     
-    # Run FZF and extract the selection
-    # Important: we need to ensure the delimiter is preserved for debug mode
-    local result
-    if [ "$debug_mode" = true ]; then
-        result=$(fzf "${fzf_opts[@]}" < "$tmpfile" | sed -E 's/^(H|D)://; s/ \[HISTORY\]$//')
-    else
-        result=$(fzf "${fzf_opts[@]}" < "$tmpfile" | cut -d: -f2-)
-    fi
+    # Select with FZF - combine history entries and directories
+    # IMPORTANT: History entries must come first to ensure they appear in search
+    local selected=$(cat "$tmp_history" "$tmp_dirs" | fzf "${fzf_opts[@]}")
     
-    # Remove temp file
-    rm "$tmpfile"
+    # Clean up the temporary files
+    rm -f "$tmp_history" "$tmp_dirs"
     
     # If user selected a directory, navigate to it
-    if [ -n "$result" ]; then
+    if [ -n "$selected" ]; then
+        # Remove the history prefix if present
+        selected=$(echo "$selected" | sed 's/^HISTORY: //')
+        
         # Debug output
         if [ "$debug_mode" = true ]; then
-            echo "Debug: Selected directory: $result"
+            echo "Debug: Selected directory: $selected"
         else
-            echo "Changing to directory: $result"
+            echo "Changing to directory: $selected"
         fi
         
         # Store original directory before changing
         local original_dir="$(pwd)"
         
         # Check if it's a relative or absolute path
-        if [[ "$result" == /* ]]; then
-            cd "$result" || return 1
+        if [[ "$selected" == /* ]]; then
+            cd "$selected" || return 1
         else
-            cd "$start_dir/$result" || return 1
+            cd "$start_dir/$selected" || return 1
         fi
         
         # Add to history with context information
@@ -344,7 +419,7 @@ fdf_help() {
     echo "Fuzzy Drunk Finder (FDF) - Simple Directory Navigation"
     echo ""
     echo "Usage:"
-    echo "  fdf [--hidden] [--depth N] [--unlimited] [--no-history] [--debug] [directory]"
+    echo "  fdf [--hidden] [--depth N] [--unlimited] [--no-history] [--debug] [--search [TERM]] [directory]"
     echo ""
     echo "Options:"
     echo "  --hidden      Include hidden directories in the search"
@@ -352,6 +427,7 @@ fdf_help() {
     echo "  --unlimited   Remove depth limit for searches (may be slow in large directories)"
     echo "  --no-history  Don't use or update the directory history"
     echo "  --debug       Enable debug mode with detailed information"
+    echo "  --search      Test mode: show what would be searched (optional: provide search term)"
     echo "  directory     Starting directory (default: current directory)"
     echo ""
     echo "Commands:"
