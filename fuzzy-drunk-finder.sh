@@ -84,7 +84,7 @@ get_directories() {
     local max_depth_limit=7
     
     if [ "$hidden" = true ]; then
-        # Include hidden files/directories with chosen depth
+        # Include both hidden and non-hidden directories with chosen depth
         if [ "$unlimited" = true ]; then
             # Still use a reasonable max depth to prevent hanging in huge directories
             find_cmd="find . -type d -maxdepth $max_depth_limit | sed 's|^\\./||'"
@@ -197,15 +197,25 @@ fdf() {
     local max_depth=7
     local effective_depth="$depth"
     
-    if [[ "$unlimited" = true && "$start_dir" =~ ^/home/.* ]]; then
-        # For home directories, be extra careful with depth to prevent system hang
+    if [[ "$start_dir" =~ ^/home/.* ]] && [ "$unlimited" = true ]; then
+        # Store the original unlimited value before overriding it
+        local original_unlimited="$unlimited"
         unlimited=false
         effective_depth="$max_depth"
         echo "Notice: Using maximum depth of $max_depth for home directory to prevent system hang"
     fi
     
     # Get directories with caching
-    local dirs=$(get_directories "$start_dir" "$show_hidden" "$effective_depth" "$unlimited")
+    local dirs=""
+    # When we're in a home directory and both hidden and unlimited were originally requested,
+    # use the original unlimited value to ensure hidden files are properly included
+    if [[ "$start_dir" =~ ^/home/.* ]] && [ "$show_hidden" = true ] && [ "$original_unlimited" = true ]; then
+        # Call get_directories with the original unlimited=true to maintain proper behavior with hidden files
+        dirs=$(get_directories "$start_dir" "$show_hidden" "$effective_depth" true)
+    else
+        # Regular call
+        dirs=$(get_directories "$start_dir" "$show_hidden" "$effective_depth" "$unlimited")
+    fi
     
     # Create temporary files
     local tmp_dirs=$(mktemp)
