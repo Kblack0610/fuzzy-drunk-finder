@@ -2,6 +2,8 @@
 
 A lightweight, fast directory navigation tool powered by fzf. Navigate your filesystem with ease and precision, even after a few drinks!
 
+Fuzzy finder is great, I was trying to speed things up with some questionable guesses, inferences, and assumptions. This maps your directory with history of most common places you go to help you get there just a little bit faster.
+
 ## Overview
 
 Fuzzy Drunk Finder provides an intuitive interface for quickly navigating your filesystem using fuzzy search. It's designed to be:

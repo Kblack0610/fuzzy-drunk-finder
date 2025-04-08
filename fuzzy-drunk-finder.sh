@@ -245,8 +245,9 @@ fdf() {
     if [ -n "$history_entries" ]; then
         while IFS= read -r hentry; do
             if [ -n "$hentry" ]; then
-                # Make history entries stand out with a distinctive prefix
-                echo "HISTORY: $hentry" >> "$tmp_history"
+                # Mark history entries with ASCII character that sorts before anything else
+                # Use "!" which comes before all other characters in ASCII sort order
+                echo "!HISTORY: $hentry" >> "$tmp_history"
                 history_count=$((history_count + 1))
             fi
         done <<< "$history_entries"
@@ -342,24 +343,49 @@ fdf() {
         --header="$header_text"
         --prompt="Fuzzy Drunk Finder > "
         --bind="ctrl-/:toggle-preview"
-        --preview="echo {} | grep -q '^HISTORY:' && echo 'History entry from previous navigation' || ls -la ${start_dir}/{} 2>/dev/null || ls -la {} 2>/dev/null || echo 'No preview available'"
+        --preview="echo {} | grep -q '^!HISTORY:' && echo 'History entry from previous navigation' || ls -la ${start_dir}/{} 2>/dev/null || ls -la {} 2>/dev/null || echo 'No preview available'"
+        --no-sort
     )
     
     if [ "$debug_mode" = true ]; then
         echo "Debug: FZF options: ${fzf_opts[*]}"
+        echo "Debug: History entries count: $(wc -l < "$tmp_history")"
+        echo "Debug: Directory entries count: $(wc -l < "$tmp_dirs")"
     fi
     
     # Select with FZF - combine history entries and directories
     # IMPORTANT: History entries must come first to ensure they appear in search
-    local selected=$(cat "$tmp_history" "$tmp_dirs" | fzf "${fzf_opts[@]}")
     
-    # Clean up the temporary files
-    rm -f "$tmp_history" "$tmp_dirs"
+    # Create a combined file with history entries at the top
+    local tmp_combined=$(mktemp)
+    
+    # First add all history entries
+    if [ -n "$history_entries" ]; then
+        cat "$tmp_history" > "$tmp_combined"
+        # Add a separator line
+        echo "" >> "$tmp_combined"
+    fi
+    
+    # Then add all directories
+    cat "$tmp_dirs" >> "$tmp_combined"
+    
+    # Final check of the combined file in debug mode
+    if [ "$debug_mode" = true ]; then
+        echo "Debug: Combined file created with $(wc -l < "$tmp_combined") entries"
+        echo "Debug: First 10 lines of combined file:"
+        head -10 "$tmp_combined" | sed 's/^/  /'
+    fi
+    
+    # Use FZF to select from the combined file
+    local selected=$(fzf "${fzf_opts[@]}" < "$tmp_combined")
+    
+    # Clean up all temporary files
+    rm -f "$tmp_history" "$tmp_dirs" "$tmp_combined"
     
     # If user selected a directory, navigate to it
     if [ -n "$selected" ]; then
         # Remove the history prefix if present
-        selected=$(echo "$selected" | sed 's/^HISTORY: //')
+        selected=$(echo "$selected" | sed 's/^!HISTORY: //')
         
         # Debug output
         if [ "$debug_mode" = true ]; then
