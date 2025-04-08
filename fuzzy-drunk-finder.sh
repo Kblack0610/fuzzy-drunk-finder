@@ -437,7 +437,20 @@ fdf_clear_cache() {
     fi
 }
 
-# Usage examples function
+# Function to clear history file
+fdf_clear_history() {
+    if [ -f "$HISTORY_FILE" ]; then
+        echo "Clearing FDF history file: $HISTORY_FILE"
+        rm -f "$HISTORY_FILE"
+        touch "$HISTORY_FILE"
+        chmod 600 "$HISTORY_FILE"
+        echo "History file cleared."
+    else
+        echo "No history file found at $HISTORY_FILE"
+    fi
+}
+
+# Function for fuzzy directory navigation help
 fdf_help() {
     echo "Fuzzy Drunk Finder (FDF) - Simple Directory Navigation"
     echo ""
@@ -454,30 +467,19 @@ fdf_help() {
     echo "  directory     Starting directory (default: current directory)"
     echo ""
     echo "Commands:"
-    echo "  fdf_help      Show this help message"
-    echo "  fdf_clear_cache  Clear the directory cache to force fresh searches"
+    echo "  fdf           Launch fuzzy directory finder"
+    echo "  fdf_help      Display this help message"
+    echo "  fdf_clear_history  Clear the history file"
     echo ""
     echo "Examples:"
-    echo "  fdf                         # Navigate from current directory"
+    echo "  fdf                         # Search from current directory"
     echo "  fdf --hidden                # Include hidden directories"
-    echo "  fdf --depth 5               # Search 5 levels deep" 
-    echo "  fdf --unlimited             # Search without depth limit (may be slow)"
-    echo "  fdf --depth 0               # Same as --unlimited"
-    echo "  fdf /home                   # Start from /home"
-    echo "  fdf --hidden --unlimited ~  # Unlimited search from home, show hidden"
-    echo ""
-    echo "History:"
-    echo "  FDF saves your directories visited from specific locations."
-    echo "  History is context-aware - you'll only see history relevant to your current location."
-    echo "  Your history file is stored at: $HISTORY_FILE"
-    echo ""
-    echo "Performance:"
-    echo "  FDF caches directory listings to improve boot time in large directories."
-    echo "  The cache expires after $(($CACHE_TIMEOUT/60)) minutes or can be cleared with fdf_clear_cache."
-    echo "  Cache is stored at: $CACHE_DIR"
-    echo ""
-    echo "Note: This script must be sourced, not executed."
-    echo "Please run: source fuzzy-drunk-finder.sh or . fuzzy-drunk-finder.sh"
+    echo "  fdf --depth 5               # Search to a depth of 5 directories"
+    echo "  fdf --unlimited             # No depth limit (may be slow in large directories)"
+    echo "  fdf --debug                 # Show debug information"
+    echo "  fdf /home                   # Search from /home directory"
+    echo "  fdf --search dot            # Test what would be searched for 'dot'"
+    echo "  fdf_clear_history           # Clear the history file"
 }
 
 # Execute the function immediately when sourced with any provided arguments

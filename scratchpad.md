@@ -85,6 +85,16 @@ Create a more responsive version of `fzf_dev.sh` that:
   - [X] Show separate sections for history and directory matches
   - [X] Display clear counts of matched entries
   - [X] Provide detailed summary to help diagnose issues
+[X] Further improve history search behavior
+  - [X] Ensure history entries are mixed with regular entries based on search relevance
+  - [X] Make history entries distinctly visible with "HISTORY: " prefix only in debug mode
+  - [X] Fix issues with --hidden and --unlimited flags for history visibility
+  - [X] Use separate temporary files for more reliable processing
+  - [X] Add custom preview functionality to enhance visibility
+[X] Add history management functionality
+  - [X] Create fdf_clear_history command to easily reset history
+  - [X] Update help documentation to document the new command
+  - [X] Ensure history entries don't keep old prefix formats
 [ ] Additional performance optimizations (deferred)
 [ ] Implement additional improvements
 
@@ -170,6 +180,14 @@ Create a more responsive version of `fzf_dev.sh` that:
 - Separate testing tools are invaluable for shell scripts where normal debugging is challenging
 - For search issues, creating a dedicated test mode is better than trying to debug via the UI
 - Simulate user actions in test mode to verify expected behavior works correctly
+- Don't force entries to the top unless specifically requested - let search relevance determine order
+- Using two separate files (for history and directories) and manually combining them gives you more control
+- Adding a preview feature to FZF can greatly enhance the usability of the tool
+- FZF options like --exact can make search results more intuitive but also limit fuzzy matching
+- Maintaining the original relevance-based searching is important for large directories
+- Include commands to fix or reset data when things might get corrupted
+- Balance visibility with normal operation - use debug mode to show tags and extra information
+- Make sure users can easily clear or reset state if it gets into a weird state
 
 ## Potential Additional Improvements
 1. Add fuzzy search capabilities for deeper directory structures
