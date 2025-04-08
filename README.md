@@ -4,16 +4,44 @@ A lightweight, fast directory navigation tool powered by fzf. Navigate your file
 
 Fuzzy finder is great, I was trying to speed things up with some questionable guesses, inferences, and assumptions. This maps your directory with history of most common places you go to help you get there just a little bit faster.
 
+## What's New in Version 1.2.0
+
+- **Modular Structure:** Code has been reorganized into logical modules for easier maintenance
+- **Configuration System:** User-customizable settings via configuration files
+- **Enhanced Cache Management:** Improved cache system with rebuild option
+- **Multiple Installation Methods:** System-wide, user-local, and distribution packages
+- **Comprehensive Test Suite:** Automated tests to ensure reliability
+- **GitHub Actions Integration:** Continuous testing for quality assurance
+
 ## Overview
 
 Fuzzy Drunk Finder provides an intuitive interface for quickly navigating your filesystem using fuzzy search. It's designed to be:
 
-- **Fast**: Near-instant startup time
+- **Fast**: Near-instant startup time with intelligent caching
 - **Intuitive**: Simple, consistent interface
 - **Flexible**: Customizable search depth and starting locations
 - **Friendly**: Works with hidden files when you need it to
+- **Reliable**: Comprehensive test suite ensures everything works as expected
 
 ## Installation
+
+### Quick Install (User-Local)
+
+```bash
+cd /path/to/fuzzy-drunk-finder
+./install.sh
+# Select option 1 for user-local installation
+```
+
+### System-Wide Installation
+
+```bash
+cd /path/to/fuzzy-drunk-finder
+./install.sh
+# Select option 2 for system-wide installation (requires sudo)
+```
+
+### Manual Installation
 
 1. Clone this repository or download the script
 2. Make it executable: `chmod +x fuzzy-drunk-finder.sh`
@@ -26,7 +54,7 @@ source /path/to/fuzzy-drunk-finder/fuzzy-drunk-finder.sh
 
 ## Usage
 
-After sourcing the script, you can use the `fdf` command:
+After installation, you can use the `fdf` command:
 
 ```bash
 # Basic usage - navigate from current directory
@@ -43,14 +71,34 @@ fdf --depth 5
 
 # Unlimited depth search
 fdf --unlimited
-# OR
-fdf --depth 0
 
 # Disable history tracking
 fdf --no-history
 
+# Force rebuild of cache
+fdf --rebuild-cache
+
+# Show version information
+fdf --version
+
 # Combine options
 fdf --hidden --unlimited /usr/local
+```
+
+## Additional Commands
+
+```bash
+# Display help information
+fdf_help
+
+# Clear cache
+fdf_clear_cache
+
+# Clear history
+fdf_clear_history
+
+# Edit user configuration
+fdf_config
 ```
 
 ## Features
@@ -58,23 +106,74 @@ fdf --hidden --unlimited /usr/local
 - **Simple Navigation**: Quickly find and change to any directory within your search depth
 - **Hidden File Support**: Toggle visibility of hidden directories with `--hidden` flag
 - **Customizable Depth**: Control how deep the search goes with `--depth N`
-- **Unlimited Depth**: Use `--unlimited` or `--depth 0` for searching without depth limits
+- **Unlimited Depth**: Use `--unlimited` for searching without depth limits
 - **History Tracking**: Automatically saves and prioritizes your most frequently visited directories
 - **Custom Starting Point**: Begin your search from any directory
+- **Performance Caching**: Intelligent caching for fast startup and navigation
+- **User Configuration**: Customize default behavior through configuration files
+- **Debug Mode**: Detailed information for troubleshooting with `--debug`
 - **Help System**: Built-in help with `fdf_help`
+
+## Configuration
+
+Fuzzy Drunk Finder supports configuration through several methods:
+
+1. **User Configuration:** `~/.config/fdf/config`
+2. **Local Configuration:** `/path/to/fuzzy-drunk-finder/.fdf_config`
+3. **System Configuration:** `/etc/fdf/config` (if installed system-wide)
+
+Create or edit your configuration:
+```bash
+fdf_config
+```
+
+Example configuration:
+```bash
+# Default depth for directory searches
+DEPTH=4
+
+# Show hidden directories by default (true/false)
+SHOW_HIDDEN=true
+
+# Cache timeout in seconds (3600 = 1 hour)
+CACHE_TIMEOUT=7200
+```
 
 ## Requirements
 
 - [fzf](https://github.com/junegunn/fzf) must be installed
 - Bash or compatible shell
 
-## How It Works
+## For Developers
 
-Fuzzy Drunk Finder uses `find` to locate directories within your specified depth and `fzf` to provide the fuzzy search interface. When you select a directory, it automatically changes your current working directory to the selected location.
+### Running Tests
 
-The script also maintains a history file at `~/.fdf_history` to track your most frequently used directories. These directories are presented at the top of the selection list, letting you quickly access your common destinations.
+```bash
+# Run all tests
+cd /path/to/fuzzy-drunk-finder
+./tests/run_all_tests.sh
 
-The script must be sourced (not executed directly) because it needs to change your shell's current directory, which a separate process cannot do.
+# Run specific test
+./tests/test_hidden.sh
+```
+
+### Project Structure
+
+- `fuzzy-drunk-finder.sh`: Main script that loads modules
+- `lib/`: Directory containing modular components
+  - `fdf-core.sh`: Core functionality
+  - `fdf-cache.sh`: Cache management
+  - `fdf-history.sh`: History tracking
+  - `fdf-config.sh`: Configuration system
+  - `fdf-help.sh`: Help documentation
+- `tests/`: Automated test scripts
+- `install.sh`: Installation script with multiple options
+
+### GitHub Actions Integration
+
+The project includes GitHub Actions workflows that automatically run the test suite on:
+- Push to main/master branch
+- Pull requests to main/master branch
 
 ## Tips
 
@@ -84,7 +183,7 @@ The script must be sourced (not executed directly) because it needs to change yo
 - For repositories or project directories, a depth of 4-5 often works well
 - Use `--unlimited` with caution in large directory structures (like `/` or `/home`) as it can be slow
 - Your history will improve over time as the script learns your navigation patterns
-- Set `--depth 0` as an alternative to `--unlimited` if you prefer
+- Use `--rebuild-cache` if you notice stale directory listings
 
 ## License
 
