@@ -50,6 +50,12 @@ Create a more responsive version of `fzf_dev.sh` that:
   - [X] Make history context-aware (only show relevant entries for current location)
   - [X] Store directory context with each history entry
   - [X] Improve modular design with separate functions for maintainability
+[X] Fix history filtering issue
+  - [X] Implement ANSI color highlighting for history items
+  - [X] Fix search functionality to maintain history entries during filtering
+  - [X] Properly clean up ANSI codes and tags when selecting a directory
+  - [X] Improve header display with performance metrics and mode information
+[ ] Additional performance optimizations (deferred)
 [ ] Implement additional improvements
 
 ## Lessons
@@ -92,6 +98,13 @@ Create a more responsive version of `fzf_dev.sh` that:
 - Add commands to manually clear/reset cached data for users who want fresh results
 - Only display global history when it makes sense - often context-specific history is more valuable
 - Design for both performance and user experience - caching improves response time but context-aware results improve usability
+- When implementing features, focus on one problem at a time and test thoroughly
+- Remember to properly clean up formatting codes (ANSI colors, tags) when processing user selection
+- ANSI color codes can be used to highlight important entries without affecting functionality
+- Using sed to clean up display artifacts is a reliable approach
+- Testing is essential when making significant changes to ensure functionality remains intact
+- Prioritize fixing core functionality before adding performance enhancements
+- For complex changes, implement and test in smaller steps rather than all at once
 
 ## Potential Additional Improvements
 1. Add fuzzy search capabilities for deeper directory structures

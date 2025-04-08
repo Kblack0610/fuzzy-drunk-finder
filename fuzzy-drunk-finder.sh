@@ -45,21 +45,6 @@ add_to_history() {
     fi
 }
 
-# Function to get context-aware history for current directory
-get_context_history() {
-    local current_dir="$1"
-    
-    if [ -f "$HISTORY_FILE" ]; then
-        # Get most frequently visited directories from this location
-        grep "^$current_dir:" "$HISTORY_FILE" | 
-            sed "s|^$current_dir:||" | 
-            sort | uniq -c | sort -nr | 
-            sed 's/^ *[0-9]* *//' | 
-            grep -v '^$' | 
-            awk '{print "[HISTORY] " $0}'
-    fi
-}
-
 # Function to create a unique cache key for a directory search
 get_cache_key() {
     local dir="$1"
@@ -172,42 +157,53 @@ fdf() {
     # Go to the start directory
     cd "$start_dir" || return 1
     
-    # Get context-specific history for this directory
-    local history_entries=""
-    if [ "$use_history" = true ]; then
-        history_entries=$(get_context_history "$start_dir")
-    fi
-    
     # Get directories with caching
     local dirs=$(get_directories "$start_dir" "$show_hidden" "$depth" "$unlimited")
+    
+    # Get context-specific history entries
+    local history_entries=""
+    if [ "$use_history" = true ]; then
+        if [ -f "$HISTORY_FILE" ]; then
+            # Find directories visited from this location
+            history_entries=$(grep "^$start_dir:" "$HISTORY_FILE" | 
+                              sed "s|^$start_dir:||" | 
+                              sort | uniq -c | sort -nr | 
+                              sed 's/^ *[0-9]* *//' | 
+                              grep -v '^$')
+        fi
+    fi
     
     # Calculate boot time before showing UI
     local boot_time=$(echo "$(date +%s.%N) - $start_time" | bc)
     
-    # Combine history and current directories (if we have history entries)
-    local suggestions="$dirs"
+    # Create formatted entries for fzf
+    local all_items=""
+    
+    # History entries with tag for display but not filtering
     if [ -n "$history_entries" ]; then
-        suggestions=$(
-            (
-                echo "$history_entries"
-                echo "$dirs"
-            )
-        )
+        all_items=$(echo "$history_entries" | sed 's/^/\\033[34m/' | sed 's/$/\\033[0m [HISTORY]/')
+        all_items="${all_items}\n"
     fi
     
-    # Use fzf to let user select a directory
-    local prompt_text="Directory"
-    [ "$unlimited" = true ] && prompt_text="Directory (unlimited depth)"
-    [ "$show_hidden" = true ] && prompt_text="$prompt_text (hidden files)"
+    # Regular directory entries
+    all_items="${all_items}$(echo "$dirs")"
     
-    local selected=$(echo "$suggestions" | fzf --height 40% --reverse \
-        --header="Select directory to navigate to (from: $start_dir) [Boot: ${boot_time}s]" \
-        --prompt="$prompt_text > ")
+    # Set header text with info
+    local header_text="Directory: $start_dir"
+    [ "$show_hidden" = true ] && header_text="$header_text [Hidden: ON]" 
+    [ "$unlimited" = true ] && header_text="$header_text [Depth: Unlimited]"
+    header_text="$header_text [Boot: ${boot_time}s]"
+    
+    # Use fzf with tabs to allow better finding
+    local selected=$(echo -e "$all_items" | fzf --height 40% --reverse \
+        --ansi \
+        --header="$header_text" \
+        --prompt="Fuzzy Drunk Finder > ")
     
     # If user selected a directory, navigate to it
     if [ -n "$selected" ]; then
-        # Strip [HISTORY] tag if present
-        selected="${selected#[HISTORY] }"
+        # Remove ANSI color codes and [HISTORY] tag if present
+        selected=$(echo "$selected" | sed 's/\x1b\[[0-9;]*m//g' | sed 's/ \[HISTORY\]$//')
         
         echo "Changing to directory: $selected"
         # Store original directory before changing
