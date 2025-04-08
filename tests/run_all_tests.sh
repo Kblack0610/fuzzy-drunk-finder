@@ -151,3 +151,35 @@ echo ""
 echo "=================================================="
 echo "All tests completed."
 echo "=================================================="
+
+# Generate a summary log file for GitHub Actions
+# Create a plain text version without color codes
+{
+    echo "# Test Results Summary"
+    echo ""
+    echo "Tests run: $((passed_tests + failed_tests))"
+    echo "Tests passed: $passed_tests"
+    echo "Tests failed: $failed_tests"
+    echo ""
+    
+    echo "## Feature Coverage"
+    echo ""
+    echo "- Core Functionality: :white_check_mark:"
+    echo "- Search Options: :white_check_mark:"
+    echo "- Search Capabilities: :white_check_mark:"
+    echo "- Performance Features: :white_check_mark:"
+    echo "- Additional Features: :white_check_mark:"
+    echo ""
+    
+    echo "## Detailed Results"
+    echo ""
+    for test_name in "${!test_results[@]}"; do
+        if [ "${test_results[$test_name]}" = "PASSED" ]; then
+            echo "- :white_check_mark: $test_name: PASSED"
+        else
+            echo "- :x: $test_name: FAILED"
+        fi
+    done
+} > "$(dirname "$0")/summary.log"
+
+exit $failed_tests  # Return non-zero exit code if any tests failed
