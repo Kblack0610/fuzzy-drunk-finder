@@ -67,6 +67,12 @@ Create a more responsive version of `fzf_dev.sh` that:
   - [X] Test directory structure creation
   - [X] Cover basic functionality, history, caching, and selection
   - [X] Generate clear test reports with pass/fail indicators
+[X] Add debug mode and improve history visibility
+  - [X] Add [HISTORY] tag for better visibility of history entries
+  - [X] Implement --debug flag for detailed debugging information
+  - [X] Show entry counts, settings, and performance data in debug mode
+  - [X] Fix history filtering to work with all flag combinations
+  - [X] Fix temporary file handling to ensure consistent behavior
 [ ] Additional performance optimizations (deferred)
 [ ] Implement additional improvements
 
@@ -132,6 +138,13 @@ Create a more responsive version of `fzf_dev.sh` that:
 - Use color-coded output in tests to quickly identify successes and failures 
 - Test both positive and negative cases (e.g., testing that shallow depth doesn't show deep directories)
 - Running a suite of automated tests before making changes can prevent introducing bugs
+- Sometimes users want to see debugging information that's normally hidden (like which entries are from history)
+- A debug mode is a clean way to provide detailed information without cluttering the normal interface
+- When filtering with many options/flags, ensure all combinations work correctly
+- Proper temporary file handling is critical for data with special characters and newlines
+- Small changes in command arguments (--nth vs --with-nth) can have big impacts on functionality
+- Combining a clean interface with an optional debug mode gives users the best of both worlds
+- Different types of users have different needs - some want simplicity while others want visibility into internal operations
 
 ## Potential Additional Improvements
 1. Add fuzzy search capabilities for deeper directory structures

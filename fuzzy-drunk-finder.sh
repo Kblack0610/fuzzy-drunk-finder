@@ -114,6 +114,7 @@ fdf() {
     local unlimited=false
     local use_history=true
     local start_time=$(date +%s.%N)
+    local debug_mode=false
     
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -128,6 +129,10 @@ fdf() {
                 ;;
             --no-history)
                 use_history=false
+                shift
+                ;;
+            --debug)
+                debug_mode=true
                 shift
                 ;;
             --depth)
@@ -145,7 +150,7 @@ fdf() {
                 ;;
             -*)
                 echo "Unknown option: $1"
-                echo "Usage: fdf [--hidden] [--depth N] [--unlimited] [--no-history] [directory]"
+                echo "Usage: fdf [--hidden] [--depth N] [--unlimited] [--no-history] [--debug] [directory]"
                 return 1
                 ;;
             *)
@@ -199,40 +204,94 @@ fdf() {
     local header_text="Directory: $start_dir"
     [ "$show_hidden" = true ] && header_text="$header_text [Hidden: ON]" 
     [ "$unlimited" = true ] && header_text="$header_text [Depth: Unlimited]"
+    [ "$debug_mode" = true ] && header_text="$header_text [DEBUG MODE]"
     header_text="$header_text [Boot: ${boot_time}s]"
+    
+    # Debug output
+    if [ "$debug_mode" = true ]; then
+        echo "Debug: Current directory: $start_dir"
+        echo "Debug: Show hidden: $show_hidden"
+        echo "Debug: Depth: $depth (effective: $effective_depth)"
+        echo "Debug: Unlimited: $unlimited"
+        echo "Debug: History entries: $(echo "$history_entries" | wc -l)"
+        echo "Debug: Total directories: $(echo "$dirs" | wc -l)"
+        echo "Debug: Boot time: ${boot_time}s"
+    fi
     
     # Create a temporary file for our combined listing
     local tmpfile=$(mktemp)
     
-    # Add history entries with a prefix tag in first column only
+    # Add history entries with a prefix tag in first column
     if [ -n "$history_entries" ]; then
-        # This is critical: we add history entries with a prefix that's shown in the preview
-        # but doesn't interfere with searching
         while IFS= read -r line; do
-            echo "H:$line"
-        done <<< "$history_entries" >> "$tmpfile"
+            echo "H:$line" >> "$tmpfile"
+        done <<< "$history_entries"
     fi
     
-    # Add regular directories with a different prefix in first column only
+    # Add regular directories with a different prefix
     while IFS= read -r line; do
-        echo "D:$line"
+        echo "D:$line" >> "$tmpfile"
     done <<< "$dirs" >> "$tmpfile"
     
-    # Use FZF with preview to show tags but keep searching functional
-    local result=$(fzf --height 40% --reverse \
-        --header="$header_text" \
-        --prompt="Fuzzy Drunk Finder > " \
-        --delimiter : \
-        --with-nth 2.. \
-        --preview 'if [[ {1} == "H" ]]; then echo -e "\033[34m[HISTORY]\033[0m"; else echo ""; fi' \
-        --preview-window=up:1:noborder < "$tmpfile" | cut -d: -f2-)
+    # Use --with-nth for display and include [HISTORY] tag in preview
+    local preview_cmd
+    if [ "$debug_mode" = true ]; then
+        # Detailed preview in debug mode
+        preview_cmd='if [[ {1} == "H" ]]; then 
+            echo -e "\033[34m[HISTORY]\033[0m Type: History Entry"; 
+            echo "From directory: '"$start_dir"'"; 
+        else 
+            echo "Type: Regular Directory"; 
+        fi'
+    else
+        # Normal preview just shows [HISTORY] tag
+        preview_cmd='if [[ {1} == "H" ]]; then echo -e "\033[34m[HISTORY]\033[0m"; else echo ""; fi'
+    fi
+    
+    # Define FZF options - keeping the prefix for sorting but showing the path
+    local fzf_opts=(
+        --height 40%
+        --reverse
+        --header="$header_text"
+        --prompt="Fuzzy Drunk Finder > "
+        --delimiter :
+        --with-nth 2..
+        --preview "$preview_cmd"
+        --preview-window=up:1:noborder
+    )
+    
+    # In debug mode, add visible type indicators to the displayed output
+    if [ "$debug_mode" = true ]; then
+        cat "$tmpfile" | awk -F: '{
+            if($1 == "H") {
+                print $1 ":" $2 " [HISTORY]"
+            } else {
+                print $0
+            }
+        }' > "${tmpfile}.display"
+        mv "${tmpfile}.display" "$tmpfile"
+    fi
+    
+    # Run FZF and extract the selection
+    # Important: we need to ensure the delimiter is preserved for debug mode
+    local result
+    if [ "$debug_mode" = true ]; then
+        result=$(fzf "${fzf_opts[@]}" < "$tmpfile" | sed -E 's/^(H|D)://; s/ \[HISTORY\]$//')
+    else
+        result=$(fzf "${fzf_opts[@]}" < "$tmpfile" | cut -d: -f2-)
+    fi
     
     # Remove temp file
     rm "$tmpfile"
     
     # If user selected a directory, navigate to it
     if [ -n "$result" ]; then
-        echo "Changing to directory: $result"
+        # Debug output
+        if [ "$debug_mode" = true ]; then
+            echo "Debug: Selected directory: $result"
+        else
+            echo "Changing to directory: $result"
+        fi
         
         # Store original directory before changing
         local original_dir="$(pwd)"
@@ -247,6 +306,10 @@ fdf() {
         # Add to history with context information
         if [ "$use_history" = true ]; then
             add_to_history "$(pwd)" "$original_dir"
+            
+            if [ "$debug_mode" = true ]; then
+                echo "Debug: Added to history - From: $original_dir, To: $(pwd)"
+            fi
         fi
         
         # Return success
@@ -254,6 +317,10 @@ fdf() {
     fi
     
     # User cancelled, return to original directory
+    if [ "$debug_mode" = true ]; then
+        echo "Debug: User cancelled selection"
+    fi
+    
     return 0
 }
 
@@ -277,13 +344,14 @@ fdf_help() {
     echo "Fuzzy Drunk Finder (FDF) - Simple Directory Navigation"
     echo ""
     echo "Usage:"
-    echo "  fdf [--hidden] [--depth N] [--unlimited] [--no-history] [directory]"
+    echo "  fdf [--hidden] [--depth N] [--unlimited] [--no-history] [--debug] [directory]"
     echo ""
     echo "Options:"
     echo "  --hidden      Include hidden directories in the search"
     echo "  --depth N     Set search depth (default: 3)"
     echo "  --unlimited   Remove depth limit for searches (may be slow in large directories)"
     echo "  --no-history  Don't use or update the directory history"
+    echo "  --debug       Enable debug mode with detailed information"
     echo "  directory     Starting directory (default: current directory)"
     echo ""
     echo "Commands:"
