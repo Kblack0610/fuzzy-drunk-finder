@@ -51,10 +51,22 @@ Create a more responsive version of `fzf_dev.sh` that:
   - [X] Store directory context with each history entry
   - [X] Improve modular design with separate functions for maintainability
 [X] Fix history filtering issue
-  - [X] Implement ANSI color highlighting for history items
-  - [X] Fix search functionality to maintain history entries during filtering
-  - [X] Properly clean up ANSI codes and tags when selecting a directory
-  - [X] Improve header display with performance metrics and mode information
+  - [X] Implement proper prefix-based filtering for history items
+  - [X] Use fzf's --delimiter and --nth options to maintain searchability
+  - [X] Add preview window to show [HISTORY] tag without affecting search text
+  - [X] Use a temporary file for proper handling of newlines and special characters
+  - [X] Clean parsing of selected item with cut to avoid any formatting issues
+[X] Fix performance issues with unlimited depth searches
+  - [X] Add pragmatic depth limit (7) for unlimited searches to prevent system hangs
+  - [X] Special handling for home directories with automatic depth adjustment
+  - [X] User notification when depth is automatically limited
+  - [X] Improved caching to minimize repeat searches
+[X] Create comprehensive test suite
+  - [X] Implement test_fdf.sh script with 10 different test cases
+  - [X] Mock FZF functionality for automated testing
+  - [X] Test directory structure creation
+  - [X] Cover basic functionality, history, caching, and selection
+  - [X] Generate clear test reports with pass/fail indicators
 [ ] Additional performance optimizations (deferred)
 [ ] Implement additional improvements
 
@@ -99,12 +111,27 @@ Create a more responsive version of `fzf_dev.sh` that:
 - Only display global history when it makes sense - often context-specific history is more valuable
 - Design for both performance and user experience - caching improves response time but context-aware results improve usability
 - When implementing features, focus on one problem at a time and test thoroughly
-- Remember to properly clean up formatting codes (ANSI colors, tags) when processing user selection
-- ANSI color codes can be used to highlight important entries without affecting functionality
-- Using sed to clean up display artifacts is a reliable approach
-- Testing is essential when making significant changes to ensure functionality remains intact
-- Prioritize fixing core functionality before adding performance enhancements
-- For complex changes, implement and test in smaller steps rather than all at once
+- FZF has powerful filtering capabilities that can be leveraged with --delimiter and --nth options
+- The preview feature in FZF is useful for showing additional info without affecting the search text
+- Using a temporary file ensures proper handling of newlines and special characters
+- Simple data prefixing (H: and D:) can be more reliable than ANSI color codes for marking item types
+- The cut command is a clean way to parse delimited output without sed's complexity
+- For complex filtering needs, use fzf's built-in capabilities rather than trying to craft complex formatting
+- Always test search functionality with various inputs to ensure consistent behavior
+- Sometimes simpler approaches (prefixes + delimiter) are more reliable than complex ones (ANSI codes)
+- Unlimited depth doesn't literally need to be unlimited - a reasonable max depth (like 7) is deep enough for most use cases
+- Always implement safeguards against operations that could hang the system 
+- For home directories or large file systems, be especially careful about recursive operations
+- Be transparent with users when automatically adjusting parameters for performance/safety reasons
+- Communicate performance trade-offs to users with clear notifications
+- It's better to set reasonable defaults than to allow operations that might hang the system
+- For FZF, --with-nth controls display but still allows search on all fields, while --nth controls which fields are searchable
+- Automated tests are crucial for shell scripts to avoid regressions
+- Mocking external commands like FZF and cd allows for proper testing without affecting the real system
+- When testing, create isolated environments with temporary directories
+- Use color-coded output in tests to quickly identify successes and failures 
+- Test both positive and negative cases (e.g., testing that shallow depth doesn't show deep directories)
+- Running a suite of automated tests before making changes can prevent introducing bugs
 
 ## Potential Additional Improvements
 1. Add fuzzy search capabilities for deeper directory structures

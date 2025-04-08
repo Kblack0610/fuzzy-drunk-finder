@@ -75,17 +75,24 @@ get_directories() {
     
     # Build the find command based on options
     local find_cmd
+    
+    # For unlimited depth in very large directories, we need a pragmatic approach
+    # to avoid hanging - limit to a reasonable max depth of 7 which is still very deep
+    local max_depth_limit=7
+    
     if [ "$hidden" = true ]; then
         # Include hidden files/directories with chosen depth
         if [ "$unlimited" = true ]; then
-            find_cmd="find . -type d | sed 's|^\\./||'"
+            # Still use a reasonable max depth to prevent hanging in huge directories
+            find_cmd="find . -type d -maxdepth $max_depth_limit | sed 's|^\\./||'"
         else
             find_cmd="find . -type d -maxdepth $depth | sed 's|^\\./||'"
         fi
     else
         # Exclude hidden files/directories with chosen depth
         if [ "$unlimited" = true ]; then
-            find_cmd="find . -type d -not -path \"*/\\.*\" | sed 's|^\\./||'"
+            # Still use a reasonable max depth to prevent hanging in huge directories
+            find_cmd="find . -type d -not -path \"*/\\.*\" -maxdepth $max_depth_limit | sed 's|^\\./||'"
         else
             find_cmd="find . -type d -not -path \"*/\\.*\" -maxdepth $depth | sed 's|^\\./||'"
         fi
@@ -157,8 +164,20 @@ fdf() {
     # Go to the start directory
     cd "$start_dir" || return 1
     
+    # For very large directories like /home/username, limit the depth
+    # even with --unlimited to prevent hanging
+    local max_depth=7
+    local effective_depth="$depth"
+    
+    if [[ "$unlimited" = true && "$start_dir" =~ ^/home/.* ]]; then
+        # For home directories, be extra careful with depth to prevent system hang
+        unlimited=false
+        effective_depth="$max_depth"
+        echo "Notice: Using maximum depth of $max_depth for home directory to prevent system hang"
+    fi
+    
     # Get directories with caching
-    local dirs=$(get_directories "$start_dir" "$show_hidden" "$depth" "$unlimited")
+    local dirs=$(get_directories "$start_dir" "$show_hidden" "$effective_depth" "$unlimited")
     
     # Get context-specific history entries
     local history_entries=""
@@ -176,44 +195,53 @@ fdf() {
     # Calculate boot time before showing UI
     local boot_time=$(echo "$(date +%s.%N) - $start_time" | bc)
     
-    # Create formatted entries for fzf
-    local all_items=""
-    
-    # History entries with tag for display but not filtering
-    if [ -n "$history_entries" ]; then
-        all_items=$(echo "$history_entries" | sed 's/^/\\033[34m/' | sed 's/$/\\033[0m [HISTORY]/')
-        all_items="${all_items}\n"
-    fi
-    
-    # Regular directory entries
-    all_items="${all_items}$(echo "$dirs")"
-    
-    # Set header text with info
+    # Setup FZF preview text
     local header_text="Directory: $start_dir"
     [ "$show_hidden" = true ] && header_text="$header_text [Hidden: ON]" 
     [ "$unlimited" = true ] && header_text="$header_text [Depth: Unlimited]"
     header_text="$header_text [Boot: ${boot_time}s]"
     
-    # Use fzf with tabs to allow better finding
-    local selected=$(echo -e "$all_items" | fzf --height 40% --reverse \
-        --ansi \
+    # Create a temporary file for our combined listing
+    local tmpfile=$(mktemp)
+    
+    # Add history entries with a prefix tag in first column only
+    if [ -n "$history_entries" ]; then
+        # This is critical: we add history entries with a prefix that's shown in the preview
+        # but doesn't interfere with searching
+        while IFS= read -r line; do
+            echo "H:$line"
+        done <<< "$history_entries" >> "$tmpfile"
+    fi
+    
+    # Add regular directories with a different prefix in first column only
+    while IFS= read -r line; do
+        echo "D:$line"
+    done <<< "$dirs" >> "$tmpfile"
+    
+    # Use FZF with preview to show tags but keep searching functional
+    local result=$(fzf --height 40% --reverse \
         --header="$header_text" \
-        --prompt="Fuzzy Drunk Finder > ")
+        --prompt="Fuzzy Drunk Finder > " \
+        --delimiter : \
+        --with-nth 2.. \
+        --preview 'if [[ {1} == "H" ]]; then echo -e "\033[34m[HISTORY]\033[0m"; else echo ""; fi' \
+        --preview-window=up:1:noborder < "$tmpfile" | cut -d: -f2-)
+    
+    # Remove temp file
+    rm "$tmpfile"
     
     # If user selected a directory, navigate to it
-    if [ -n "$selected" ]; then
-        # Remove ANSI color codes and [HISTORY] tag if present
-        selected=$(echo "$selected" | sed 's/\x1b\[[0-9;]*m//g' | sed 's/ \[HISTORY\]$//')
+    if [ -n "$result" ]; then
+        echo "Changing to directory: $result"
         
-        echo "Changing to directory: $selected"
         # Store original directory before changing
         local original_dir="$(pwd)"
         
         # Check if it's a relative or absolute path
-        if [[ "$selected" == /* ]]; then
-            cd "$selected" || return 1
+        if [[ "$result" == /* ]]; then
+            cd "$result" || return 1
         else
-            cd "$start_dir/$selected" || return 1
+            cd "$start_dir/$result" || return 1
         fi
         
         # Add to history with context information
