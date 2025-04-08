@@ -12,7 +12,8 @@
 # Configuration
 HISTORY_FILE="$HOME/.fdf_history"
 MAX_HISTORY_ENTRIES=1000
-CACHE_DIR="$HOME/.cache/fdf"
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+CACHE_DIR="$SCRIPT_DIR/.fdf_cache"
 CACHE_TIMEOUT=3600  # Cache timeout in seconds (1 hour)
 
 # Create necessary directories and files
@@ -55,8 +56,9 @@ get_cache_key() {
     local depth="$3"
     local unlimited="$4"
     
-    # Create a unique key based on search parameters
-    echo "${dir}_h${hidden}_d${depth}_u${unlimited}" | md5sum | cut -d' ' -f1
+    # Create a unique hash based on the directory path, hidden flag, depth, and unlimited flag
+    # This ensures different search parameters get different cache files
+    echo "$dir-$hidden-$depth-$unlimited" | md5sum | cut -d' ' -f1
 }
 
 # Function to get directories with caching
@@ -65,50 +67,82 @@ get_directories() {
     local hidden="$2"
     local depth="$3"
     local unlimited="$4"
+    local debug_mode="$5"  # Pass in debug_mode as a parameter
     
     # Create a unique cache key
     local cache_key=$(get_cache_key "$dir" "$hidden" "$depth" "$unlimited")
     local cache_file="$CACHE_DIR/$cache_key"
     
-    # Check if we have a valid cache file
+    # Ensure cache directory exists
+    mkdir -p "$CACHE_DIR"
+    
+    # Check if we have a valid cache file and it's not too old
     if [ -f "$cache_file" ] && [ $(($(date +%s) - $(stat -c %Y "$cache_file"))) -lt "$CACHE_TIMEOUT" ]; then
+        if [ "$debug_mode" = true ]; then
+            echo "Debug: Using cached directory list from $cache_file" >&2
+            # Count the number of entries in the cache file
+            local cache_entries=$(wc -l < "$cache_file")
+            echo "Debug: Cache contains $cache_entries entries" >&2
+        fi
         cat "$cache_file"
         return
     fi
     
-    # Build the find command based on options
-    local find_cmd
-    
-    # For unlimited depth in very large directories, we need a pragmatic approach
-    # to avoid hanging - limit to a reasonable max depth of 7 which is still very deep
-    local max_depth_limit=7
-    
-    if [ "$hidden" = true ]; then
-        # Include both hidden and non-hidden directories with chosen depth
-        if [ "$unlimited" = true ]; then
-            # Still use a reasonable max depth to prevent hanging in huge directories
-            find_cmd="find . -type d -maxdepth $max_depth_limit | sed 's|^\\./||'"
-        else
-            find_cmd="find . -type d -maxdepth $depth | sed 's|^\\./||'"
-        fi
-    else
-        # Exclude hidden files/directories with chosen depth
-        if [ "$unlimited" = true ]; then
-            # Still use a reasonable max depth to prevent hanging in huge directories
-            find_cmd="find . -type d -not -path \"*/\\.*\" -maxdepth $max_depth_limit | sed 's|^\\./||'"
-        else
-            find_cmd="find . -type d -not -path \"*/\\.*\" -maxdepth $depth | sed 's|^\\./||'"
-        fi
+    if [ "$debug_mode" = true ]; then
+        echo "Debug: Building fresh directory list for $dir (hidden=$hidden, depth=$depth, unlimited=$unlimited)" >&2
     fi
     
-    # Execute the find command and cache the results
-    eval "$find_cmd" | grep -v '^$' > "$cache_file"
+    # For unlimited depth in very large directories, we need a pragmatic approach
+    # to avoid hanging - limit to a reasonable max depth
+    local max_depth_limit=7
+    local actual_depth="$depth"
+    
+    if [ "$unlimited" = true ]; then
+        actual_depth="$max_depth_limit"
+    fi
+    
+    # Create a temporary file for the results
+    local temp_results=$(mktemp)
+    
+    # Change to the directory to use relative paths in find
+    # This avoids issues with special characters in path names
+    (
+        cd "$dir" 2>/dev/null || { 
+            echo "Error: Cannot access directory $dir" >&2
+            exit 1
+        }
+        
+        # Run the appropriate find command based on hidden flag
+        if [ "$hidden" = true ]; then
+            # Include hidden directories
+            if [ "$debug_mode" = true ]; then
+                echo "Debug: Running find command with hidden=true, depth=$actual_depth" >&2
+            fi
+            # Use -L to follow symlinks for more complete results
+            find -L . -maxdepth "$actual_depth" -type d 2>/dev/null | sed 's|^./||'
+        else
+            # Exclude hidden directories
+            if [ "$debug_mode" = true ]; then
+                echo "Debug: Running find command with hidden=false, depth=$actual_depth" >&2
+            fi
+            find -L . -maxdepth "$actual_depth" -type d -not -path "*/\.*" 2>/dev/null | sed 's|^./||'
+        fi
+    ) > "$temp_results"
+    
+    # Count the results for debugging
+    if [ "$debug_mode" = true ]; then
+        local result_count=$(wc -l < "$temp_results")
+        echo "Debug: Found $result_count directories" >&2
+    fi
+    
+    # Move the temp file to the cache location
+    mv "$temp_results" "$cache_file"
     
     # Return the results
     cat "$cache_file"
 }
 
-# Get context-specific history entries
+# Function to get context-specific history entries
 get_context_history() {
     local current_dir="$1"
     if [ -f "$HISTORY_FILE" ]; then
@@ -131,6 +165,7 @@ fdf() {
     local debug_mode=false
     local test_mode=false
     local search_term=""
+    local force_rebuild_cache=false
     
     # Original directory - store this BEFORE any directory changes
     local from_dir="$(pwd)"
@@ -158,6 +193,10 @@ fdf() {
                 debug_mode=true
                 shift
                 ;;
+            --rebuild-cache)
+                force_rebuild_cache=true
+                shift
+                ;;
             --search)
                 test_mode=true
                 if [ "$#" -gt 1 ] && [ "${2:0:1}" != "-" ]; then
@@ -173,7 +212,7 @@ fdf() {
                 ;;
         esac
     done
-    
+
     # Set the target directory for search to the current directory if not specified
     local start_dir="${start_dir:-$(pwd)}"
     
@@ -197,25 +236,25 @@ fdf() {
     local max_depth=7
     local effective_depth="$depth"
     
+    # If in a home directory with unlimited depth, show a notice but keep unlimited=true
     if [[ "$start_dir" =~ ^/home/.* ]] && [ "$unlimited" = true ]; then
-        # Store the original unlimited value before overriding it
-        local original_unlimited="$unlimited"
-        unlimited=false
         effective_depth="$max_depth"
         echo "Notice: Using maximum depth of $max_depth for home directory to prevent system hang"
     fi
     
-    # Get directories with caching
-    local dirs=""
-    # When we're in a home directory and both hidden and unlimited were originally requested,
-    # use the original unlimited value to ensure hidden files are properly included
-    if [[ "$start_dir" =~ ^/home/.* ]] && [ "$show_hidden" = true ] && [ "$original_unlimited" = true ]; then
-        # Call get_directories with the original unlimited=true to maintain proper behavior with hidden files
-        dirs=$(get_directories "$start_dir" "$show_hidden" "$effective_depth" true)
-    else
-        # Regular call
-        dirs=$(get_directories "$start_dir" "$show_hidden" "$effective_depth" "$unlimited")
+    # If force_rebuild_cache is set, remove any existing cache for this configuration
+    if [ "$force_rebuild_cache" = true ] && [ "$debug_mode" = true ]; then
+        local cache_key=$(get_cache_key "$start_dir" "$show_hidden" "$effective_depth" "$unlimited")
+        local cache_file="$CACHE_DIR/$cache_key"
+        if [ -f "$cache_file" ]; then
+            echo "Debug: Forcing cache rebuild, removing $cache_file" >&2
+            rm -f "$cache_file"
+        fi
     fi
+    
+    # Get directories with caching
+    # Pass all needed parameters including debug_mode
+    local dirs=$(get_directories "$start_dir" "$show_hidden" "$effective_depth" "$unlimited" "$debug_mode")
     
     # Create temporary files
     local tmp_dirs=$(mktemp)
@@ -301,9 +340,16 @@ fdf() {
         
         if [ -n "$search_term" ]; then
             # Search within directories
+            if [ "$debug_mode" = true ]; then
+                echo "Debug: Searching for '$search_term' in $(echo "$dirs" | wc -l) directories" >&2
+            fi
+            
             matched_dirs=$(echo "$dirs" | grep -i "$search_term" || echo "")
+            
             if [ -n "$matched_dirs" ]; then
+                # Display the first 20 matched directories
                 echo "$matched_dirs" | head -20
+                
                 dirs_count=$(echo "$matched_dirs" | wc -l)
                 if [ "$dirs_count" -gt 20 ]; then
                     echo "... ($(($dirs_count - 20)) more matches)"
@@ -411,13 +457,19 @@ alias fdf_quick="fdf"
 
 # Function to clear cache
 fdf_clear_cache() {
+    echo "Clearing FDF cache..."
     if [ -d "$CACHE_DIR" ]; then
-        rm -rf "$CACHE_DIR"/*
-        mkdir -p "$CACHE_DIR"
-        echo "Fuzzy Drunk Finder cache cleared."
+        rm -rf "${CACHE_DIR:?}"/* 2>/dev/null
+        echo "Cache cleared successfully."
     else
-        mkdir -p "$CACHE_DIR"
-        echo "Cache directory created at $CACHE_DIR."
+        echo "No cache directory found."
+    fi
+    
+    # Also check for old cache location for backward compatibility
+    if [ -d "$HOME/.cache/fdf" ]; then
+        echo "Found old cache directory. Clearing..."
+        rm -rf "${HOME:?}/.cache/fdf"/* 2>/dev/null
+        echo "Old cache cleared successfully."
     fi
 }
 
@@ -447,6 +499,7 @@ fdf_help() {
     echo "  --unlimited   Remove depth limit for searches (may be slow in large directories)"
     echo "  --no-history  Don't use or update the directory history"
     echo "  --debug       Enable debug mode with detailed information"
+    echo "  --rebuild-cache  Force rebuild of cache for this search"
     echo "  --search      Test mode: show what would be searched (optional: provide search term)"
     echo "  directory     Starting directory (default: current directory)"
     echo ""
