@@ -95,10 +95,25 @@ Create a more responsive version of `fzf_dev.sh` that:
   - [X] Create fdf_clear_history command to easily reset history
   - [X] Update help documentation to document the new command
   - [X] Ensure history entries don't keep old prefix formats
+[X] Simplify code for better search capabilities
+  - [X] Revert to direct piping of files to fzf without complex combining logic
+  - [X] Remove unnecessary flags that were limiting search flexibility
+  - [X] Keep history entries simple in regular mode to maximize searchability
+  - [X] Return to the core functionality that made the original approach effective
+[X] Improve robustness
+  - [X] Fix Escape key behavior to always leave the user in their original directory
+  - [X] Add clear user feedback in both normal and debug modes
+  - [X] Maintain the test mode functionality for easier debugging
+  - [X] Add Ctrl+Y shortcut to copy a path to clipboard
+  - [X] Use proper exit code checking to ensure Escape works correctly
+  - [X] Fix history tracking to properly record navigation context
+  - [X] Fix hanging issues with simpler code approach
 [ ] Additional performance optimizations (deferred)
 [ ] Implement additional improvements
 
 ## Lessons
+
+### Technical Lessons
 - When working with file system operations, ensure you have the correct permissions and paths
 - Caching directory-specific suggestions improves responsiveness
 - Using md5sum of the current directory path creates unique cache identifiers
@@ -188,6 +203,81 @@ Create a more responsive version of `fzf_dev.sh` that:
 - Include commands to fix or reset data when things might get corrupted
 - Balance visibility with normal operation - use debug mode to show tags and extra information
 - Make sure users can easily clear or reset state if it gets into a weird state
+- Sometimes simpler is better - overcomplicated approaches can cause more problems than they solve
+- Handle user cancellation paths (like Escape key) as first-class citizens in your code
+- Always give users feedback on what happened, especially when nothing appears to happen
+- Over-optimization can make things worse - focus on core functionality first
+- Check exit codes when using external tools to properly handle different termination paths
+- Adding handy shortcuts like copying paths can greatly enhance user experience
+- A good help menu should document all keyboard shortcuts
+- Keep it simple - complex file descriptor approaches can cause hanging issues
+- When capturing command output AND exit codes, the standard approach ($? after command) is more reliable
+- Test key keyboard shortcuts thoroughly - especially those that exit the program
+- Favor reliable simple approaches over clever complex ones for better stability
+
+### Technical Lessons
+- Avoid overly complex file descriptor manipulation when simpler methods exist
+- Properly handle exit codes from external tools like FZF
+- Test in both debug and regular mode to catch differences in behavior
+- Keep cancellation behavior simple and intuitive
+- History tracking with context makes navigation more efficient
+- Prefer direct piping to FZF over complex redirection
+- Temporary file cleanup is essential for script reliability
+- Shell functions should be designed with clean return values
+
+### UX Lessons
+- Users expect to stay in their current directory when they hit Escape
+- Copy to clipboard functionality adds significant convenience
+- Verbose debug output helps troubleshoot issues while keeping regular output clean
+- Preview of directories provides valuable context when navigating
+- Keep messages minimal for common operations to avoid clutter
+- Match behavior to user expectations rather than technical correctness
+- Never force users to navigate when they cancel a selection
+
+## Recent Improvements
+
+### Fixed Directory Handling
+- Completely rewrote directory handling to keep track of two separate paths:
+  - `from_dir`: the original directory where the command was executed (never changes)
+  - `start_dir`: the target directory to search in (parameter to fdf command)
+- This ensures that when specifying a target search directory like `fdf /tmp`, canceling with Escape still keeps you in your original directory
+
+### Improved History Context
+- History entries are now always collected from the original directory
+- This ensures context-aware history works properly regardless of search directory
+- Fixed processing of history entries with search terms
+
+### Code Organization
+- Moved function definitions to ensure they're defined before use
+- Improved temporary file handling to prevent errors
+- Added explicit debug information about both original and target directories
+
+### Escape Key Behavior
+- Added proper exit code detection to ensure Escape key doesn't change directories
+- Simplified the code approach to avoid hanging issues
+- Added clear feedback messages to inform users when staying in original directory
+
+### Keyboard Shortcuts
+- Added Ctrl+Y shortcut to copy the selected path to clipboard without navigating
+- Updated help documentation to make users aware of all keyboard shortcuts
+- Made sure shortcuts don't interfere with normal operation
+
+### Test Mode
+- Ensured test mode stays in original directory
+- Added explicit comments and logic to prevent directory changes
+- Fixed issues with search term handling to show relevant results
+
+### Debugging
+- Added more verbose debug output in debug mode
+- Added test mode with --search to easily test what entries would be found
+- Enhanced error handling and feedback for all operations
+
+## Final Testing
+- [X] Test Escape key behavior to ensure it stays in original directory
+- [X] Test Ctrl+Y clipboard functionality
+- [X] Test --search mode with and without search terms
+- [X] Test history entries with various flag combinations
+- [ ] Test in directories with many subdirectories to verify performance
 
 ## Potential Additional Improvements
 1. Add fuzzy search capabilities for deeper directory structures

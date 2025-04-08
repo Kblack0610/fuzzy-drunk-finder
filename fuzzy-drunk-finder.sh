@@ -29,18 +29,21 @@ fi
 
 # Function to add a directory to history with context
 add_to_history() {
-    local visited_dir="$1"
-    local from_dir="$2"
+    local from_dir="$1"
+    local visited_dir="$2"
     
-    # Don't add empty entries
+    # Only add valid entries with both from and to directories
     if [ -n "$visited_dir" ] && [ -n "$from_dir" ]; then
-        # Format: from_directory:visited_directory
         echo "$from_dir:$visited_dir" >> "$HISTORY_FILE"
         
-        # Keep history file at a reasonable size
-        if [ "$(wc -l < "$HISTORY_FILE")" -gt "$MAX_HISTORY_ENTRIES" ]; then
-            tail -n "$MAX_HISTORY_ENTRIES" "$HISTORY_FILE" > "${HISTORY_FILE}.tmp"
-            mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
+        # Limit history file entries to MAX_HISTORY_ENTRIES
+        if [ -f "$HISTORY_FILE" ]; then
+            local line_count=$(wc -l < "$HISTORY_FILE")
+            if [ "$line_count" -gt "$MAX_HISTORY_ENTRIES" ]; then
+                # Keep only the last MAX_HISTORY_ENTRIES lines
+                tail -n "$MAX_HISTORY_ENTRIES" "$HISTORY_FILE" > "${HISTORY_FILE}.tmp"
+                mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
+            fi
         fi
     fi
 }
@@ -105,25 +108,43 @@ get_directories() {
     cat "$cache_file"
 }
 
+# Get context-specific history entries
+get_context_history() {
+    local current_dir="$1"
+    if [ -f "$HISTORY_FILE" ]; then
+        # Find directories visited from this location
+        grep "^$current_dir:" "$HISTORY_FILE" | 
+        sed "s|^$current_dir:||" | 
+        sort | uniq -c | sort -nr | 
+        sed 's/^ *[0-9]* *//' | 
+        grep -v '^$'
+    fi
+}
+
 # Function for fuzzy directory navigation
 fdf() {
-    # Default values
-    local start_dir="$(pwd)"
+    # Parse options and set defaults
     local show_hidden=false
     local depth=3
     local unlimited=false
     local use_history=true
-    local start_time=$(date +%s.%N)
     local debug_mode=false
-    local search_term=""
     local test_mode=false
+    local search_term=""
     
-    # Parse arguments
-    while [[ $# -gt 0 ]]; do
+    # Original directory - store this BEFORE any directory changes
+    local from_dir="$(pwd)"
+    
+    # Process arguments
+    while [ "$#" -gt 0 ]; do
         case "$1" in
             --hidden)
                 show_hidden=true
                 shift
+                ;;
+            --depth)
+                depth="$2"
+                shift 2
                 ;;
             --unlimited)
                 unlimited=true
@@ -139,47 +160,37 @@ fdf() {
                 ;;
             --search)
                 test_mode=true
-                if [[ -n "$2" && "$2" != -* ]]; then
+                if [ "$#" -gt 1 ] && [ "${2:0:1}" != "-" ]; then
                     search_term="$2"
-                    shift 2
-                else
-                    search_term=""
                     shift
                 fi
-                ;;
-            --depth)
-                if [[ "$2" =~ ^[0-9]+$ ]]; then
-                    depth="$2"
-                    # Special case: depth 0 means unlimited
-                    if [ "$depth" -eq 0 ]; then
-                        unlimited=true
-                    fi
-                    shift 2
-                else
-                    echo "Error: --depth requires a number"
-                    return 1
-                fi
-                ;;
-            -*)
-                echo "Unknown option: $1"
-                echo "Usage: fdf [--hidden] [--depth N] [--unlimited] [--no-history] [--debug] [--search [TERM]] [directory]"
-                return 1
+                shift
                 ;;
             *)
-                # Assume it's a directory
-                if [ -d "$1" ]; then
-                    start_dir="$1"
-                    shift
-                else
-                    echo "Error: '$1' is not a valid directory"
-                    return 1
-                fi
+                # Last argument is the directory
+                start_dir="$1"
+                shift
                 ;;
         esac
     done
     
-    # Go to the start directory
-    cd "$start_dir" || return 1
+    # Set the target directory for search to the current directory if not specified
+    local start_dir="${start_dir:-$(pwd)}"
+    
+    # Ensure the directory exists and is accessible
+    if [ ! -d "$start_dir" ]; then
+        echo "Error: Directory '$start_dir' does not exist or is not accessible."
+        return 1
+    fi
+    
+    # Debug information
+    if [ "$debug_mode" = true ]; then
+        echo "Debug: Current directory: $from_dir"
+        echo "Debug: Target search directory: $start_dir"
+        echo "Debug: Show hidden: $show_hidden"
+        echo "Debug: Depth: $depth (effective: $([ "$unlimited" = true ] && echo "unlimited" || echo "$depth"))"
+        echo "Debug: Unlimited: $unlimited"
+    fi
     
     # For very large directories like /home/username, limit the depth
     # even with --unlimited to prevent hanging
@@ -196,20 +207,42 @@ fdf() {
     # Get directories with caching
     local dirs=$(get_directories "$start_dir" "$show_hidden" "$effective_depth" "$unlimited")
     
-    # Get context-specific history entries
+    # Create temporary files
+    local tmp_dirs=$(mktemp)
+    local tmp_history=$(mktemp)
+    
+    # Get history entries for the current directory
     local history_entries=""
+    local history_count=0
     if [ "$use_history" = true ]; then
-        if [ -f "$HISTORY_FILE" ]; then
-            # Find directories visited from this location
-            history_entries=$(grep "^$start_dir:" "$HISTORY_FILE" | 
-                              sed "s|^$start_dir:||" | 
-                              sort | uniq -c | sort -nr | 
-                              sed 's/^ *[0-9]* *//' | 
-                              grep -v '^$')
+        history_entries=$(get_context_history "$from_dir")
+        # Create temporary file for history
+        cat /dev/null > "$tmp_history"
+        if [ -n "$history_entries" ]; then
+            # Process history entries
+            while IFS= read -r hentry; do
+                if [ -n "$hentry" ]; then
+                    if [ -n "$search_term" ] && ! echo "$hentry" | grep -q -i "$search_term"; then
+                        continue  # Skip entries that don't match search term
+                    fi
+                    
+                    if [ "$debug_mode" = true ]; then
+                        # Add tag in debug mode
+                        echo "HISTORY: $hentry" >> "$tmp_history"
+                    else
+                        # Simple entry in normal mode
+                        echo "$hentry" >> "$tmp_history"
+                    fi
+                    history_count=$((history_count + 1))
+                fi
+            done <<< "$history_entries"
         fi
+    else
+        cat /dev/null > "$tmp_history"
     fi
     
     # Calculate boot time before showing UI
+    local start_time=$(date +%s.%N)
     local boot_time=$(echo "$(date +%s.%N) - $start_time" | bc)
     
     # Setup FZF preview text
@@ -221,38 +254,17 @@ fdf() {
     
     # Debug output
     if [ "$debug_mode" = true ]; then
-        echo "Debug: Current directory: $start_dir"
+        echo "Debug: Current directory: $from_dir"
         echo "Debug: Show hidden: $show_hidden"
         echo "Debug: Depth: $depth (effective: $effective_depth)"
         echo "Debug: Unlimited: $unlimited"
-        echo "Debug: History entries: $(echo "$history_entries" | wc -l)"
+        echo "Debug: History entries: $history_count"
         echo "Debug: Total directories: $(echo "$dirs" | wc -l)"
         echo "Debug: Boot time: ${boot_time}s"
     fi
     
-    # Create temporary files for our entries
-    local tmp_dirs=$(mktemp)
-    local tmp_history=$(mktemp)
-    
     # Get directories based on parameters
     echo "$dirs" > "$tmp_dirs"
-    
-    # Get relevant history entries
-    local history_count=0
-    if [ -n "$history_entries" ]; then
-        while IFS= read -r hentry; do
-            if [ -n "$hentry" ]; then
-                if [ "$debug_mode" = true ]; then
-                    # Add tag in debug mode
-                    echo "HISTORY: $hentry" >> "$tmp_history"
-                else
-                    # Simple entry in normal mode
-                    echo "$hentry" >> "$tmp_history"
-                fi
-                history_count=$((history_count + 1))
-            fi
-        done <<< "$history_entries"
-    fi
     
     # Exit if there's nothing to search
     if [ ! -s "$tmp_dirs" ] && [ ! -s "$tmp_history" ]; then
@@ -266,22 +278,9 @@ fdf() {
         echo "Search term: '${search_term}'"
         echo "=== History Entries ==="
         
-        if [ -n "$history_entries" ]; then
-            if [ -n "$search_term" ]; then
-                # Search within history entries
-                matched_history=$(echo "$history_entries" | grep -i "$search_term" || echo "")
-                if [ -n "$matched_history" ]; then
-                    echo "$matched_history" | sed 's/^/[HISTORY] /'
-                    history_count=$(echo "$matched_history" | wc -l)
-                else
-                    echo "No history entries match the search term."
-                    history_count=0
-                fi
-            else
-                # Show all history entries
-                echo "$history_entries" | sed 's/^/[HISTORY] /'
-                history_count=$(echo "$history_entries" | wc -l)
-            fi
+        if [ -s "$tmp_history" ]; then
+            cat "$tmp_history"
+            history_count=$(wc -l < "$tmp_history")
         else
             echo "No history entries found for this directory."
             history_count=0
@@ -318,72 +317,82 @@ fdf() {
         echo "Total matches: $(($history_count + $dirs_count))"
         echo "Test complete. Exiting without selection."
         
-        # Cleanup
+        # Cleanup and stay in original directory
         rm -f "$tmp_history" "$tmp_dirs"
+        # DO NOT CHANGE DIRECTORY - explicitly return to stay in current directory
         return 0
     fi
     
-    # Use FZF to select from the combined file
+    # Use FZF for selection with improved options
     local fzf_opts=(
         --height 40%
         --reverse
         --header="$header_text"
         --prompt="Fuzzy Drunk Finder > "
         --preview="ls -la ${start_dir}/{} 2>/dev/null || ls -la {} 2>/dev/null || echo 'No preview available'"
+        --bind="ctrl-y:execute-silent(echo {} | tr -d '\n' | xclip -selection clipboard)+abort"
     )
     
     if [ "$debug_mode" = true ]; then
         echo "Debug: FZF options: ${fzf_opts[*]}"
-        echo "Debug: History entries count: $(wc -l < "$tmp_history")"
+        echo "Debug: History entries count: $history_count"
         echo "Debug: Directory entries count: $(wc -l < "$tmp_dirs")"
     fi
     
-    # Use FZF to select from the combined file
-    local selected=$(cat "$tmp_history" "$tmp_dirs" | fzf "${fzf_opts[@]}")
+    # Use FZF to select from the combined file and capture the exit code
+    local selected=""
+    selected=$(cat "$tmp_history" "$tmp_dirs" | fzf "${fzf_opts[@]}")
+    local fzf_exit_code=$?
+    
+    # Debug the exit code
+    if [ "$debug_mode" = true ]; then
+        echo "Debug: FZF exit code: $fzf_exit_code"
+    fi
     
     # Clean up all temporary files
     rm -f "$tmp_history" "$tmp_dirs"
     
-    # If user selected a directory, navigate to it
-    if [ -n "$selected" ]; then
+    # ONLY navigate if the user actually made a selection and pressed Enter
+    if [ -n "$selected" ] && [ $fzf_exit_code -eq 0 ]; then
         # Remove the history prefix if present
         selected=$(echo "$selected" | sed 's/^HISTORY: //')
         
         # Debug output
         if [ "$debug_mode" = true ]; then
-            echo "Debug: Selected directory: $selected"
+            echo "Debug: Selected: $selected"
         else
-            echo "Changing to directory: $selected"
+            echo "Navigating to: $selected"
         fi
         
-        # Store original directory before changing
-        local original_dir="$(pwd)"
-        
-        # Check if it's a relative or absolute path
-        if [[ "$selected" == /* ]]; then
+        # Check if the selection is a relative or absolute path
+        if [ "${selected:0:1}" = "/" ]; then
+            # Absolute path
             cd "$selected" || return 1
         else
-            cd "$start_dir/$selected" || return 1
+            # Relative path - combine with search directory not the current directory
+            cd "${start_dir}/${selected}" || return 1
         fi
         
-        # Add to history with context information
+        # Add to history - always use the original directory as the from_dir
         if [ "$use_history" = true ]; then
-            add_to_history "$(pwd)" "$original_dir"
-            
-            if [ "$debug_mode" = true ]; then
-                echo "Debug: Added to history - From: $original_dir, To: $(pwd)"
-            fi
+            add_to_history "$from_dir" "$(pwd)"
         fi
-        
-        # Return success
-        return 0
+    elif [ $fzf_exit_code -eq 1 ] && [ -n "$selected" ]; then
+        # User pressed Ctrl+Y to copy to clipboard
+        if [ "$debug_mode" = true ]; then
+            echo "Debug: Path copied to clipboard."
+        else
+            echo "Path copied to clipboard."
+        fi
+    else
+        # User cancelled or exited without selection - do nothing and stay in current directory
+        if [ "$debug_mode" = true ]; then
+            echo "Debug: No selection made (exit code $fzf_exit_code). Staying in original directory ($from_dir)."
+        fi
+        # Silently stay in the current directory - no need for a message
     fi
     
-    # User cancelled, return to original directory
-    if [ "$debug_mode" = true ]; then
-        echo "Debug: User cancelled selection"
-    fi
-    
+    # Return success
     return 0
 }
 
@@ -436,6 +445,11 @@ fdf_help() {
     echo "  fdf_help      Display this help message"
     echo "  fdf_clear_history  Clear the history file"
     echo ""
+    echo "Keyboard Shortcuts:"
+    echo "  Enter         Select directory and navigate to it"
+    echo "  Escape        Cancel and stay in current directory"
+    echo "  Ctrl+Y        Copy selected path to clipboard and exit"
+    echo ""
     echo "Examples:"
     echo "  fdf                         # Search from current directory"
     echo "  fdf --hidden                # Include hidden directories"
@@ -449,11 +463,13 @@ fdf_help() {
 
 # Execute the function immediately when sourced with any provided arguments
 if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
-    # Script is being sourced
+    # Script is being sourced, make the command available
+    alias ff=fdf
     echo "Fuzzy Drunk Finder loaded. Type 'fdf' to use or 'fdf_help' for help."
 else
     # Script is being executed directly
-    echo "⚠️  This script must be sourced, not executed."
+    echo "This script must be sourced, not executed."
     echo "Please run: source $(basename "${BASH_SOURCE[0]}") or . $(basename "${BASH_SOURCE[0]}")"
+    # Do not execute the function if script is run directly
     exit 1
 fi
