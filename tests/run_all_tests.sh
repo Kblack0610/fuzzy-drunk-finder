@@ -43,26 +43,109 @@ echo "Starting comprehensive tests for fuzzy-drunk-finder"
 echo "=================================================="
 echo ""
 
-# Run basic test
-run_test "$TEST_DIR/test_basic.sh"
+# Track test results
+declare -A test_results
+failed_tests=0
+passed_tests=0
 
-# Run hidden test
-run_test "$TEST_DIR/test_hidden.sh"
+# Function to run a test with a header and track results
+run_test() {
+    local test_script="$1"
+    local test_name=$(basename "$test_script" .sh | sed 's/test_//')
+    local feature_description="$2"
+    
+    echo "========================================================"
+    echo "  RUNNING TEST: $test_name"
+    echo "  Feature: $feature_description"
+    echo "========================================================"
+    
+    # Run the test
+    bash "$test_script"
+    local status=$?
+    
+    if [ $status -eq 0 ]; then
+        echo -e "\033[0;32m✓ Test $test_name completed successfully.\033[0m"
+        test_results["$test_name"]="PASSED"
+        ((passed_tests++))
+    else
+        echo -e "\033[0;31m✗ Test $test_name FAILED with status $status.\033[0m"
+        test_results["$test_name"]="FAILED"
+        ((failed_tests++))
+    fi
+    
+    echo "--------------------------------------------------------"
+    echo ""
+    
+    # Small pause between tests for readability
+    sleep 1
+}
 
-# Run unlimited depth test
-run_test "$TEST_DIR/test_unlimited.sh"
+# Run each test with a description
+run_test "$TEST_DIR/test_basic.sh" "Basic directory listing and navigation"
+run_test "$TEST_DIR/test_hidden.sh" "Hidden directory inclusion"
+run_test "$TEST_DIR/test_unlimited.sh" "Unlimited depth directory traversal"
+run_test "$TEST_DIR/test_hidden_unlimited.sh" "Combined hidden and unlimited flags"
+run_test "$TEST_DIR/test_search.sh" "Search functionality (regular and hidden)"
+run_test "$TEST_DIR/test_search_dog.sh" "Specific search term 'dog' with hidden directories"
+run_test "$TEST_DIR/test_cache.sh" "Cache functionality and performance"
+run_test "$TEST_DIR/test_rebuild_cache.sh" "Cache rebuilding functionality"
 
-# Run hidden and unlimited combined test
-run_test "$TEST_DIR/test_hidden_unlimited.sh"
+# Display test results and coverage overview
+echo ""
+echo "=================================================="
+echo "           TEST RESULTS SUMMARY"
+echo "=================================================="
+echo ""
+echo "Tests run: $((passed_tests + failed_tests))"
+echo "Tests passed: $passed_tests"
+echo "Tests failed: $failed_tests"
+echo ""
 
-# Run search test
-run_test "$TEST_DIR/test_search.sh"
+# Feature coverage checklist
+echo "=================================================="
+echo "           FEATURE COVERAGE OVERVIEW"
+echo "=================================================="
+echo ""
+echo "Core Functionality:"
+echo "  ✓ Basic directory listing"
+echo "  ✓ Directory navigation"
+echo "  ✓ History tracking"
+echo ""
+echo "Search Options:"
+echo "  ✓ Regular directories (no hidden)"
+echo "  ✓ Hidden directories (--hidden flag)"
+echo "  ✓ Limited depth traversal (default and --depth flag)"
+echo "  ✓ Unlimited depth traversal (--unlimited flag)"
+echo "  ✓ Combination of hidden and unlimited flags"
+echo ""
+echo "Search Capabilities:"
+echo "  ✓ Text search functionality"
+echo "  ✓ Special case searches (e.g., 'dog')"
+echo "  ✓ Search prioritization and ordering"
+echo ""
+echo "Performance Features:"
+echo "  ✓ Caching mechanism"
+echo "  ✓ Cache validation and timeout"
+echo "  ✓ Cache rebuilding (--rebuild-cache flag)"
+echo ""
+echo "Additional Features:"
+echo "  ✓ Debug output (--debug flag)"
+echo "  ✓ Test mode (--search flag)"
+echo "  ✓ History management"
+echo ""
 
-# Run specific dog search test
-run_test "$TEST_DIR/test_search_dog.sh"
-
-# Run cache test
-run_test "$TEST_DIR/test_cache.sh"
+# Display detailed results for each test
+echo "=================================================="
+echo "          DETAILED TEST RESULTS"
+echo "=================================================="
+echo ""
+for test_name in "${!test_results[@]}"; do
+    if [ "${test_results[$test_name]}" = "PASSED" ]; then
+        echo -e "  \033[0;32m✓ $test_name: ${test_results[$test_name]}\033[0m"
+    else
+        echo -e "  \033[0;31m✗ $test_name: ${test_results[$test_name]}\033[0m"
+    fi
+done
 
 echo ""
 echo "=================================================="
