@@ -1,0 +1,76 @@
+name: Fuzzy Drunk Finder Tests
+
+# Run this workflow on pushes to the main branch or PRs to main
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - '.local/bin/term_scripts/fuzzy-drunk-finder/**'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - '.local/bin/term_scripts/fuzzy-drunk-finder/**'
+
+# Allow this workflow to have write permissions to comment on PRs, etc.
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  test:
+    name: Run Test Suite
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Set up environment
+      run: |
+        chmod +x .local/bin/term_scripts/fuzzy-drunk-finder/fuzzy-drunk-finder.sh
+        chmod +x .local/bin/term_scripts/fuzzy-drunk-finder/tests/*.sh
+    
+    - name: Run all tests
+      run: |
+        cd .local/bin/term_scripts/fuzzy-drunk-finder
+        # Source the script first to make functions available
+        bash -c "source ./fuzzy-drunk-finder.sh && ./tests/run_all_tests.sh"
+      
+    - name: Upload test results as artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-results
+        path: |
+          .local/bin/term_scripts/fuzzy-drunk-finder/tests/*.log
+          
+    # If this is a PR, comment with results
+    - name: Comment on PR with test results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const fs = require('fs');
+          try {
+            // Read the test summary from a file if it exists
+            const testSummary = fs.readFileSync(
+              '.local/bin/term_scripts/fuzzy-drunk-finder/tests/summary.log', 
+              'utf8'
+            );
+            
+            const comment = `## Fuzzy Drunk Finder Test Results
+            
+            ${testSummary}
+            
+            [Full test logs are available as artifacts](${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID})
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+          } catch (error) {
+            console.log('Error creating PR comment:', error);
+          }
