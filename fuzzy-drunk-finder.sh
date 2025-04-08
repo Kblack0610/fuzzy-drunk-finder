@@ -245,9 +245,13 @@ fdf() {
     if [ -n "$history_entries" ]; then
         while IFS= read -r hentry; do
             if [ -n "$hentry" ]; then
-                # Mark history entries with ASCII character that sorts before anything else
-                # Use "!" which comes before all other characters in ASCII sort order
-                echo "!HISTORY: $hentry" >> "$tmp_history"
+                if [ "$debug_mode" = true ]; then
+                    # Add tag in debug mode
+                    echo "HISTORY: $hentry" >> "$tmp_history"
+                else
+                    # No tag in normal mode
+                    echo "$hentry" >> "$tmp_history"
+                fi
                 history_count=$((history_count + 1))
             fi
         done <<< "$history_entries"
@@ -268,9 +272,6 @@ fdf() {
         
         echo "Debug: First few directory entries:"
         echo "$dirs" | head -3 | sed 's/^/  /'
-        
-        echo "Debug: First few lines of history file:"
-        head -3 "$tmp_history" | sed 's/^/  /'
     fi
     
     # Test mode - simulate a search without using FZF
@@ -336,15 +337,14 @@ fdf() {
         return 0
     fi
     
-    # Use FZF for selection with improved options - critically important!
+    # Use FZF for selection with improved options
     local fzf_opts=(
         --height 40%
         --reverse
         --header="$header_text"
         --prompt="Fuzzy Drunk Finder > "
         --bind="ctrl-/:toggle-preview"
-        --preview="echo {} | grep -q '^!HISTORY:' && echo 'History entry from previous navigation' || ls -la ${start_dir}/{} 2>/dev/null || ls -la {} 2>/dev/null || echo 'No preview available'"
-        --no-sort
+        --preview="echo {} | grep -q '^HISTORY:' && echo 'History entry from previous navigation' || ls -la ${start_dir}/{} 2>/dev/null || ls -la {} 2>/dev/null || echo 'No preview available'"
     )
     
     if [ "$debug_mode" = true ]; then
@@ -353,10 +353,7 @@ fdf() {
         echo "Debug: Directory entries count: $(wc -l < "$tmp_dirs")"
     fi
     
-    # Select with FZF - combine history entries and directories
-    # IMPORTANT: History entries must come first to ensure they appear in search
-    
-    # Create a combined file with history entries at the top
+    # Create a combined file with history entries and directories
     local tmp_combined=$(mktemp)
     
     # First add all history entries
@@ -385,7 +382,7 @@ fdf() {
     # If user selected a directory, navigate to it
     if [ -n "$selected" ]; then
         # Remove the history prefix if present
-        selected=$(echo "$selected" | sed 's/^!HISTORY: //')
+        selected=$(echo "$selected" | sed 's/^HISTORY: //')
         
         # Debug output
         if [ "$debug_mode" = true ]; then
