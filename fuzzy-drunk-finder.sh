@@ -230,17 +230,14 @@ fdf() {
         echo "Debug: Boot time: ${boot_time}s"
     fi
     
-    # Create a temporary file for FZF input
-    local tmp_history=$(mktemp)
+    # Create temporary files for our entries
     local tmp_dirs=$(mktemp)
+    local tmp_history=$(mktemp)
     
-    # Debug info
-    if [ "$debug_mode" = true ]; then
-        echo "Debug: Using temporary history file: $tmp_history"
-        echo "Debug: Using temporary dirs file: $tmp_dirs"
-    fi
+    # Get directories based on parameters
+    echo "$dirs" > "$tmp_dirs"
     
-    # Add history entries to a separate temp file
+    # Get relevant history entries
     local history_count=0
     if [ -n "$history_entries" ]; then
         while IFS= read -r hentry; do
@@ -249,7 +246,7 @@ fdf() {
                     # Add tag in debug mode
                     echo "HISTORY: $hentry" >> "$tmp_history"
                 else
-                    # No tag in normal mode
+                    # Simple entry in normal mode
                     echo "$hentry" >> "$tmp_history"
                 fi
                 history_count=$((history_count + 1))
@@ -257,21 +254,10 @@ fdf() {
         done <<< "$history_entries"
     fi
     
-    # Add directories to a separate temp file
-    echo "$dirs" > "$tmp_dirs"
-    
-    # In debug mode, show even more details
-    if [ "$debug_mode" = true ]; then
-        echo "Debug: History entries added: $history_count"
-        echo "Debug: Total directories: $(wc -l < "$tmp_dirs")"
-        
-        if [ -n "$history_entries" ]; then
-            echo "Debug: First few history entries:"
-            echo "$history_entries" | head -3 | sed 's/^/  /'
-        fi
-        
-        echo "Debug: First few directory entries:"
-        echo "$dirs" | head -3 | sed 's/^/  /'
+    # Exit if there's nothing to search
+    if [ ! -s "$tmp_dirs" ] && [ ! -s "$tmp_history" ]; then
+        echo "No directories or history entries found to search."
+        return 1
     fi
     
     # Test mode - simulate a search without using FZF
@@ -337,14 +323,13 @@ fdf() {
         return 0
     fi
     
-    # Use FZF for selection with improved options
+    # Use FZF to select from the combined file
     local fzf_opts=(
         --height 40%
         --reverse
         --header="$header_text"
         --prompt="Fuzzy Drunk Finder > "
-        --bind="ctrl-/:toggle-preview"
-        --preview="echo {} | grep -q '^HISTORY:' && echo 'History entry from previous navigation' || ls -la ${start_dir}/{} 2>/dev/null || ls -la {} 2>/dev/null || echo 'No preview available'"
+        --preview="ls -la ${start_dir}/{} 2>/dev/null || ls -la {} 2>/dev/null || echo 'No preview available'"
     )
     
     if [ "$debug_mode" = true ]; then
@@ -353,31 +338,11 @@ fdf() {
         echo "Debug: Directory entries count: $(wc -l < "$tmp_dirs")"
     fi
     
-    # Create a combined file with history entries and directories
-    local tmp_combined=$(mktemp)
-    
-    # First add all history entries
-    if [ -n "$history_entries" ]; then
-        cat "$tmp_history" > "$tmp_combined"
-        # Add a separator line
-        echo "" >> "$tmp_combined"
-    fi
-    
-    # Then add all directories
-    cat "$tmp_dirs" >> "$tmp_combined"
-    
-    # Final check of the combined file in debug mode
-    if [ "$debug_mode" = true ]; then
-        echo "Debug: Combined file created with $(wc -l < "$tmp_combined") entries"
-        echo "Debug: First 10 lines of combined file:"
-        head -10 "$tmp_combined" | sed 's/^/  /'
-    fi
-    
     # Use FZF to select from the combined file
-    local selected=$(fzf "${fzf_opts[@]}" < "$tmp_combined")
+    local selected=$(cat "$tmp_history" "$tmp_dirs" | fzf "${fzf_opts[@]}")
     
     # Clean up all temporary files
-    rm -f "$tmp_history" "$tmp_dirs" "$tmp_combined"
+    rm -f "$tmp_history" "$tmp_dirs"
     
     # If user selected a directory, navigate to it
     if [ -n "$selected" ]; then
